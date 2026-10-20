@@ -110,8 +110,6 @@ def build(sc):
             fore.append(fx.bats(rnd, "#08090b", ridge_y))
         if night and w_.temp > 10:
             fore.append(fx.fireflies(rnd, ridge_y))
-    if sc.season == "autumn" and (sc.now.month >= 10 or w_.wind > 15) and calm:
-        fore.append(fx.leaves(rnd, drift if abs(drift) > .2 else -.6))
 
     fog = R.fog_layer(sc, L)
     low = R.low_cloud_layer(sc, L)

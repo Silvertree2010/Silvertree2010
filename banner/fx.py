@@ -153,26 +153,6 @@ def murmuration(rnd, color, n=300, dur=32.0):
     return "".join(g)
 
 
-LEAF = "M0,-2.4 C1.6,-1.2 1.6,1.2 0,2.4 C-1.6,1.2 -1.6,-1.2 0,-2.4Z"
-
-
-def leaves(rnd, drift):
-    out = []
-    cols = ["#c8782c", "#d9a03a", "#a8552a", "#e0b54a"]
-    for _ in range(12):
-        y0 = rnd.uniform(150, 280)
-        x_from, x_to = (W + 30, -30) if drift < 0 else (-30, W + 30)
-        pts = [(x_from + (x_to - x_from) * k / 6, y0 + 18 * math.sin(k * 1.3 + rnd.uniform(0, 3)) + k * 4)
-               for k in range(7)]
-        dur = rnd.uniform(9, 16) / max(.6, min(2.2, abs(drift)))
-        out.append(f'<g><path d="{LEAF}" fill="{rnd.choice(cols)}" opacity=".85">'
-                   f'<animateTransform attributeName="transform" type="rotate" from="0" to="{rnd.choice([-360, 360])}" '
-                   f'dur="{f(rnd.uniform(1.5, 3))}s" repeatCount="indefinite"/></path>'
-                   f'<animateMotion dur="{f(dur)}s" begin="-{f(rnd.uniform(0, dur))}s" repeatCount="indefinite" '
-                   f'path="{catmull(pts, closed=False)}"/></g>')
-    return "".join(out)
-
-
 def meteors(rnd):
     out = ['<linearGradient id="mt" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/>'
            '<stop offset="1" stop-color="#fff" stop-opacity=".9"/></linearGradient>']
