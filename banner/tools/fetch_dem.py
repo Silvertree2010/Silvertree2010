@@ -1,9 +1,3 @@
-"""One-off: download Terrarium elevation tiles (AWS open data, Mapzen/Tilezen) and save a
-16-bit heightmap + metadata. Run once; the result is committed so the workflow needs no network
-for terrain.
-
-    python banner/tools/fetch_dem.py
-"""
 import io, json, math, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -12,7 +6,6 @@ import numpy as np
 from PIL import Image
 
 Z = 12
-# Bernese Oberland: from the lakes down to the Valais peaks
 NORTH, SOUTH, WEST, EAST = 46.73, 46.22, 7.55, 8.42
 URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
 OUT = Path(__file__).resolve().parent.parent / "data"
@@ -41,7 +34,6 @@ def main():
     with ThreadPoolExecutor(8) as ex:
         res = dict(ex.map(fetch, tiles))
     mosaic = np.vstack([np.hstack([res[(x, y)] for x in tx]) for y in ty])
-    # crop to the bbox in pixel space
     px0, py0 = int((x0 - tx[0]) * 256), int((y0 - ty[0]) * 256)
     px1, py1 = int((x1 - tx[0]) * 256), int((y1 - ty[0]) * 256)
     dem = np.clip(mosaic[py0:py1, px0:px1], 0, 16000)

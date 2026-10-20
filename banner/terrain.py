@@ -1,6 +1,3 @@
-"""Real terrain: heightfield ray casting over a DEM of the Bernese Oberland, lit by the actual
-sun position (with cast shadows), seasonal snow line, glaciers, forest, lakes and aerial
-perspective."""
 import json, math
 from functools import lru_cache
 from pathlib import Path
@@ -13,9 +10,8 @@ DATA = Path(__file__).resolve().parent / "data"
 R_EARTH = 6_371_000
 REFRACTION = 0.13
 
-# Camera: aerial viewpoint above the lakes, looking south-east to the big peaks
 CAM_LAT, CAM_LON, CAM_ALT = 46.690, 7.800, 1900.0
-HEADING = 140.0          # degrees, 180 = south
+HEADING = 140.0
 HFOV = 68.0
 D_MIN, D_MAX, STEPS = 40.0, 70_000.0, 1800
 
@@ -32,21 +28,19 @@ def dem():
     meta = json.loads((DATA / "dem.json").read_text())
     h = np.asarray(Image.open(DATA / "dem.png"), np.float32) / meta["scale"]
     px = 40_075_016.686 * math.cos(math.radians(CAM_LAT)) / (256 * 2 ** meta["z"])
-    # sub-pixel detail so near slopes don't look faceted
     rng = np.random.default_rng(3)
     det = gaussian_filter(rng.standard_normal(h.shape).astype(np.float32), 1.0)
     rid = np.zeros_like(h)
-    for sig, amp in ((1.0, 5), (2.2, 9), (4.5, 14)):     # ridged multi-scale relief
+    for sig, amp in ((1.0, 5), (2.2, 9), (4.5, 14)):
         n_ = gaussian_filter(rng.standard_normal(h.shape).astype(np.float32), sig)
         rid += (1 - np.abs(n_ / n_.std())) * amp
     gy, gx = np.gradient(h)
-    steep = np.clip(np.hypot(gx, gy) / 18, 0, 1)          # rugged only where it's steep
+    steep = np.clip(np.hypot(gx, gy) / 18, 0, 1)
     h = h + det * 3 + rid * steep
     return h, px, meta
 
 
 def camera(W, Hh, horizon_y, view_w=None):
-    """view_w: width that spans HFOV (defaults to W); a wider W renders extra margin."""
     h, px, meta = dem()
     cx, cy = _pix(CAM_LAT, CAM_LON, meta)
     f = ((view_w or W) / 2) / math.tan(math.radians(HFOV / 2))
@@ -54,7 +48,6 @@ def camera(W, Hh, horizon_y, view_w=None):
 
 
 def project(cam, alt, az):
-    """Sky direction → screen (render pixels). Far outside the view → off-screen."""
     d = (az - HEADING + 540) % 360 - 180
     if abs(d) > 85:
         return (-1e4 if d < 0 else 1e4), cam["yh"]
@@ -63,7 +56,6 @@ def project(cam, alt, az):
     return x, y
 
 
-# --------------------------------------------------------------------------- grid maps
 def normals(h, px):
     gy, gx = np.gradient(h, px)
     n = np.stack([-gx, -gy, np.ones_like(h)], -1)
@@ -76,10 +68,8 @@ def sun_vec(alt, az):
 
 
 def shadows(h, px, alt, az):
-    """Cast shadows along the sun direction via a rotated running-envelope scan."""
     if alt <= 0.3:
         return np.zeros_like(h)
-    # rotate so the sun sits to the left (−x), then scan left → right
     to_sun = math.degrees(math.atan2(-math.cos(math.radians(az)), math.sin(math.radians(az))))
     ang = to_sun - 180.0
     hr = rotate(h, ang, reshape=True, order=1, mode="constant", cval=-1e4)
@@ -92,7 +82,6 @@ def shadows(h, px, alt, az):
     lit_r = ((env - hr) < 2.0).astype(np.float32)
     lit_r[~valid] = 1
     back = rotate(lit_r, -ang, reshape=True, order=1, mode="nearest")
-    # crop back to the original grid (rotate with reshape grows the canvas)
     oy = (back.shape[0] - h.shape[0]) // 2
     ox = (back.shape[1] - h.shape[1]) // 2
     lit = back[oy:oy + h.shape[0], ox:ox + h.shape[1]]
@@ -100,7 +89,6 @@ def shadows(h, px, alt, az):
 
 
 def albedo_maps(h, n, sc):
-    """Snow, ice, rock, meadow, forest, water — all in one RGB albedo grid."""
     rng = np.random.default_rng(11)
     slope = np.degrees(np.arccos(np.clip(n[..., 2], -1, 1)))
     big = gaussian_filter(rng.random(h.shape, dtype=np.float32), 6) - .5
@@ -115,19 +103,16 @@ def albedo_maps(h, n, sc):
     alb = np.empty(h.shape + (3,), np.float32)
     alb[:] = rock * (1 + nz[..., None] * .45)
 
-    # meadows: gentle slopes below the rock band
     m_mask = np.clip((2350 + nz * 250 - h) / 250, 0, 1) * np.clip((40 - slope) / 10, 0, 1)
     alb = alb * (1 - m_mask[..., None]) + np.array(meadow, np.float32) * (1 + nz[..., None] * .4) * m_mask[..., None]
-    # forest
     f_mask = (np.clip((1850 + nz * 200 - h) / 150, 0, 1) * np.clip((44 - slope) / 8, 0, 1)
               * np.clip((big * 2 + small * 1.5 + .62) * 2.5, 0, 1))
     fcol = np.array(forest, np.float32)
     alb = alb * (1 - f_mask[..., None]) + fcol * (1 + small[..., None] * 1.2) * f_mask[..., None]
-    if season == "autumn" and sc.now.month >= 10:   # larches turn gold near the tree line
+    if season == "autumn" and sc.now.month >= 10:
         larch = f_mask * np.clip((h - 1450) / 250, 0, 1) * np.clip(small * 8 + .2, 0, 1)
         alb = alb * (1 - larch[..., None]) + np.array((.55, .40, .12), np.float32) * larch[..., None]
 
-    # snow: seasonal line in metres, steep faces hold none
     line = 600 + sc.snowline * 2600
     s_mask = np.clip((h - line + nz * 220) / 160, 0, 1) * np.clip((52 - slope) / 12, 0, 1)
     ice = np.clip((h - 2850 + nz * 200) / 120, 0, 1) * np.clip((32 - slope) / 8, 0, 1)
@@ -151,7 +136,6 @@ def micro():
     return t
 
 
-# --------------------------------------------------------------------------- ray casting
 def cast(cam, d_from=D_MIN, d_to=D_MAX):
     h, px, _ = dem()
     W, Hh, f = cam["W"], cam["H"], cam["f"]
@@ -176,7 +160,6 @@ def cast(cam, d_from=D_MIN, d_to=D_MAX):
         M = np.minimum(M, yp)
         Ms[k], X[k], Y[k] = M, gx, gy
 
-    # for each pixel row: first step whose envelope reaches that row
     rows = np.arange(Hh, dtype=np.float32) + .5
     K = np.empty((Hh, W), np.int32)
     for c in range(W):
@@ -190,7 +173,6 @@ def cast(cam, d_from=D_MIN, d_to=D_MAX):
 
 
 def render_terrain(sc, L, cam, layers=((25_000, D_MAX), (6_000, 25_000), (D_MIN, 6_000))):
-    """→ list of RGBA arrays (far → near) for parallax."""
     h, px, _ = dem()
     n = normals(h, px)
     alb, snow, water = albedo_maps(h, n, sc)
@@ -201,7 +183,6 @@ def render_terrain(sc, L, cam, layers=((25_000, D_MAX), (6_000, 25_000), (D_MIN,
     ao = 1 - np.clip((gaussian_filter(h, 8) - h) / 260, 0, .55)
     sky_vis = (.55 + .45 * n[..., 2]) * ao
 
-    # light colours from the shared Light model
     w = sc.weather
     direct_k = (1 - L.cloud ** 1.3 * .9) * (0 if w.fog else 1) * float(np.clip(sc.sun_alt / 4, 0, 1))
     sun_col = np.clip(L.glow * 1.3, 0, 1.4) * direct_k * 1.6
@@ -217,7 +198,6 @@ def render_terrain(sc, L, cam, layers=((25_000, D_MAX), (6_000, 25_000), (D_MIN,
     shade = (lam[..., None] * sun_col + sky_vis[..., None] * amb_col
              + (moon_l[..., None] * np.array([.55, .65, .9], np.float32) if np.ndim(moon_l) else 0))
     col_grid = alb * shade
-    # alpenglow on snow just before sunrise / after sunset
     ag = float(np.exp(-((sc.sun_alt - 1.0) / 3.5) ** 2)) * (1 - L.cloud * .85)
     if ag > .01:
         col_grid += (snow * ag * .4 * (.4 + .6 * np.clip((h - 2500) / 1200, 0, 1)))[..., None] * np.array([1., .5, .55], np.float32)
@@ -235,11 +215,9 @@ def render_terrain(sc, L, cam, layers=((25_000, D_MAX), (6_000, 25_000), (D_MIN,
         rgb = rgb * (1 + (tex[..., None] - .5) * .9 * near[..., None])
         hh = map_coordinates(h, coords, order=1, mode="nearest").reshape(hit.shape)
 
-        # lakes reflect the sky near the horizon
         refl = (L.horizon * .75 + L.zenith * .15) * (.7 + .3 * direct_k)
         rgb = rgb * (1 - wat[..., None] * .85) + refl * wat[..., None] * .85
 
-        # aerial perspective: distance + height-dependent haze, sun-side forward scattering
         kind, inten = w.precip
         vis = 38_000 * (1 - L.gloom * .75)
         if w.fog:

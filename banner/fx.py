@@ -1,4 +1,3 @@
-"""Vector animations: weather, wildlife, meteors. Pure SMIL, no JS."""
 import math, random
 
 W, H = 1280, 300
@@ -11,7 +10,6 @@ def f(x):
 
 
 def catmull(points, closed=True):
-    """Smooth Bezier curve through points."""
     n = len(points)
     pts = points + points[:3] if closed else [points[0]] + points + [points[-1]]
     d = [f"M{f(pts[1][0])},{f(pts[1][1])}"]
@@ -24,7 +22,6 @@ def catmull(points, closed=True):
     return "".join(d) + ("Z" if closed else "")
 
 
-# --------------------------------------------------------------------------- Birds
 WING_UP = "M-3.2,-.7 Q-1.6,-2.3 0,0 Q1.6,-2.3 3.2,-.7"
 WING_DN = "M-3.2,1.3 Q-1.6,.7 0,0 Q1.6,.7 3.2,1.3"
 
@@ -39,7 +36,6 @@ def bird(color, scale, flap, begin, glide=False, sw=.95):
 
 
 def cranes(rnd, color):
-    """Spring: cranes passing in V formation."""
     out = []
     for k, (y, dur, off, n, s) in enumerate([(78, 70, 0, 11, 1.25), (118, 95, 48, 7, .95)]):
         g = []
@@ -63,7 +59,6 @@ SWIFT = "M-4.5,.2 Q-2.2,-1.4 0,-.4 Q2.2,-1.4 4.5,.2 Q2,-.3 .4,1 L-.4,1 Q-2,-.3 -
 
 
 def swifts(rnd, color):
-    """Summer, daytime: swifts hunting in wide arcs."""
     out = []
     for _ in range(9):
         cx, cy = rnd.uniform(250, 1050), rnd.uniform(50, 140)
@@ -78,7 +73,6 @@ BAT = "M-3.4,0 L-2.4,-1.6 L-1.4,-.4 L-.5,-1.2 L0,-.6 L.5,-1.2 L1.4,-.4 L2.4,-1.6
 
 
 def bats(rnd, color, ridge_y):
-    """Summer, dusk: bats fluttering above the forest."""
     out = []
     for _ in range(6):
         cx = rnd.uniform(150, 1130)
@@ -93,7 +87,6 @@ def bats(rnd, color, ridge_y):
 
 
 def fireflies(rnd, ridge_y):
-    """Summer, night: fireflies along the tree line."""
     out = ['<radialGradient id="ff"><stop offset="0" stop-color="#e9ff8f" stop-opacity=".9"/>'
            '<stop offset=".25" stop-color="#c8f560" stop-opacity=".35"/>'
            '<stop offset="1" stop-color="#c8f560" stop-opacity="0"/></radialGradient>']
@@ -114,7 +107,6 @@ def fireflies(rnd, ridge_y):
 
 
 def choughs(rnd, color, peak):
-    """Winter: alpine choughs circling the highest peak."""
     px, py = peak
     out = []
     for i in range(7):
@@ -129,7 +121,6 @@ def choughs(rnd, color, peak):
 
 
 def murmuration(rnd, color, n=300, dur=32.0):
-    """Autumn: a starling murmuration."""
     steps = 72
 
     def centre(t):
@@ -166,7 +157,6 @@ LEAF = "M0,-2.4 C1.6,-1.2 1.6,1.2 0,2.4 C-1.6,1.2 -1.6,-1.2 0,-2.4Z"
 
 
 def leaves(rnd, drift):
-    """Autumn: leaves blowing through the frame (direction from the wind)."""
     out = []
     cols = ["#c8782c", "#d9a03a", "#a8552a", "#e0b54a"]
     for _ in range(12):
@@ -199,12 +189,10 @@ def meteors(rnd):
     return "".join(out)
 
 
-# --------------------------------------------------------------------------- Weather
 def wind_vec(w):
-    """Screen drift from wind (east is left, west is right)."""
     toward = math.radians((w.wind_dir + 180) % 360)
     east = math.sin(toward)
-    return -east * w.wind / 25          # >0 = to the right
+    return -east * w.wind / 25
 
 
 def rain(rnd, inten, drift, color):

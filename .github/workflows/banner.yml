@@ -2,7 +2,7 @@ name: Live banner
 
 on:
   schedule:
-    - cron: "*/30 * * * *"      # every 30 min (GitHub may delay runs)
+    - cron: "*/30 * * * *"
   workflow_dispatch:
   push:
     branches: [main]
@@ -18,17 +18,28 @@ concurrency:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
+    env:
+      BANNER_ASSETS: ${{ github.workspace }}/.assets
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
           cache: pip
           cache-dependency-path: banner/requirements.txt
 
       - run: pip install -r banner/requirements.txt
+
+      - uses: actions/cache@v4
+        with:
+          path: .assets
+          key: polyhaven-${{ hashFiles('banner/tools/fetch_assets.py', 'banner/forest_scene.py') }}
+
+      - name: Fetch assets
+        run: |
+          if [ ! -d .assets/fir_tree_01 ]; then python banner/tools/fetch_assets.py .assets; fi
 
       - name: Render banner
         env:
@@ -36,7 +47,7 @@ jobs:
           BANNER_LON: ${{ secrets.BANNER_LON }}
         run: python banner/generate.py --out dist
 
-      - name: Publish to output branch (single commit, no history)
+      - name: Publish to output branch
         run: |
           cd dist
           git init -q -b output

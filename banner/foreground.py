@@ -1,12 +1,10 @@
-"""Foreground: a meadow edge with procedurally grown spruces (and larches in autumn),
-drawn branch by branch with needle fringes, lit by the same sun and sky as the terrain."""
 import math, random
 
 import numpy as np
 from PIL import Image, ImageDraw
 from scipy.ndimage import gaussian_filter
 
-SS = 3   # supersampling for feathery edges
+SS = 3
 
 
 def _bezier(p0, p1, p2, n=7):
@@ -16,13 +14,12 @@ def _bezier(p0, p1, p2, n=7):
 
 
 def _tree(dc, da, x, yb, h, rnd, col, snow, larch=False):
-    """One conifer: trunk, drooping whorls of branches, needle fringe, optional snow."""
     trunk_w = max(1, int(h * .022))
     dc.line([(x, yb), (x, yb - h)], fill=tuple(int(v * .6) for v in col), width=trunk_w)
     da.line([(x, yb), (x, yb - h)], fill=255, width=trunk_w)
     n = max(10, min(90, int(h / (2.6 if larch else 1.8))))
     for i in range(n):
-        t = (i + rnd.random()) / n                       # 0 = top, 1 = bottom
+        t = (i + rnd.random()) / n
         y0 = yb - h + t * h * .96
         for side in (-1, 1):
             if larch and rnd.random() < .35:
@@ -37,7 +34,6 @@ def _tree(dc, da, x, yb, h, rnd, col, snow, larch=False):
             w = max(1, int(h * .010 * (1.2 - .6 * t)))
             dc.line(pts, fill=c, width=w)
             da.line(pts, fill=255, width=w)
-            # needle fringe hanging off the branch
             for k in range(1, len(pts)):
                 px, py = pts[k]
                 for _ in range(2 if larch else 3):
@@ -50,7 +46,6 @@ def _tree(dc, da, x, yb, h, rnd, col, snow, larch=False):
                 sp = [(px, py - w * .6) for px, py in pts[1:-2]]
                 dc.line(sp, fill=(196, 204, 216), width=max(1, w - 1))
                 da.line(sp, fill=255, width=max(1, w))
-    # leader shoot
     dc.line([(x, yb - h), (x, yb - h * 1.04)], fill=col, width=max(1, trunk_w // 2))
     da.line([(x, yb - h), (x, yb - h * 1.04)], fill=255, width=max(1, trunk_w // 2))
 
@@ -64,7 +59,6 @@ def _ground(w, base, amp, rng):
 
 
 def foreground(sc, L, W, H, S, margin):
-    """→ [(rgba back row, shift), (rgba front row, shift)], ground line (banner y per render px)."""
     w, h = int((W + 2 * margin) * S), int(H * S)
     rnd = random.Random(42)
     rng = np.random.default_rng(42)
@@ -72,14 +66,13 @@ def foreground(sc, L, W, H, S, margin):
     snow = sc.snowline < .3
     larch_gold = season == "autumn" and sc.now.month >= 10
 
-    # light: mostly backlit silhouettes, warmed by direct sun when it's low and in front
     lum = float(L.amb @ np.array([.3, .59, .11], np.float32))
     sky_tint = L.zenith / (float(L.zenith.max()) + 1e-3)
     amb = (sky_tint * .5 + .5) * lum
     direct = float(np.clip(sc.sun_alt / 6, 0, 1)) * (1 - L.cloud ** 1.3 * .9) * (0 if sc.weather.fog else 1)
 
     rows = []
-    specs = [  # ground base (banner px), ground amp, tree height range, count, scale of haze, blur, shift
+    specs = [
         (283, 7, (11, 26), 760, .30, .3, 22),
         (301, 4, (7, 78), 260, .03, 0, 36),
     ]
@@ -95,7 +88,6 @@ def foreground(sc, L, W, H, S, margin):
             gc = (46, 44, 26)
         poly = [(0, Hc)] + [(x * SS, g[x] * SS) for x in range(w)] + [(Wc, Hc)]
         dc.polygon(poly, fill=gc); da.polygon(poly, fill=255)
-        # grass tufts on the ridge line
         for x in range(0, w, 1):
             for _ in range(2):
                 gx = (x + rnd.random()) * SS
@@ -105,11 +97,10 @@ def foreground(sc, L, W, H, S, margin):
                 c = tuple(int(v * rnd.uniform(.8, 1.3)) for v in gc)
                 dc.line([(gx, gy), (gx + gl * math.sin(ang), gy - gl * math.cos(ang))], fill=c, width=1)
                 da.line([(gx, gy), (gx + gl * math.sin(ang), gy - gl * math.cos(ang))], fill=255, width=1)
-        # trees: taller towards both sides so the peaks stay free
         xs = sorted(rnd.uniform(0, w) for _ in range(count))
         for x in xs:
             u = x / w
-            edge = max(0.0, abs(u - .5) * 2 - .25) / .75          # 0 centre … 1 edges
+            edge = max(0.0, abs(u - .5) * 2 - .25) / .75
             cluster = .5 + .5 * math.sin(u * 23 + 1.7) * math.sin(u * 7.3)
             if rnd.random() > .5 + .5 * max(edge, cluster * .7):
                 continue
@@ -126,14 +117,12 @@ def foreground(sc, L, W, H, S, margin):
         a = a.resize((w, h), Image.LANCZOS)
         alb = np.asarray(rgb, np.float32) / 255
         al = np.asarray(a, np.float32) / 255
-        if blur:  # shallow depth of field on the nearest row
+        if blur:
             al = gaussian_filter(al, blur * .6)
             alb = np.stack([gaussian_filter(alb[..., i], blur * .6) for i in range(3)], -1)
 
-        # lighting: ambient + direct on the sun-facing side + rim light when backlit
         light = amb[None, None] * 1.0 + L.glow * direct * .55
         col = alb * light * 1.5
-        # self-shadowing: inside dense canopy and close to the ground it gets darker
         occ = gaussian_filter(al, 2.5 * S)
         col = col * (1 - .5 * np.clip((occ - .55) / .45, 0, 1))[..., None]
         yy = np.arange(h, dtype=np.float32)[:, None]
@@ -143,7 +132,6 @@ def foreground(sc, L, W, H, S, margin):
         rim = np.clip(al - shifted, 0, 1)
         rim_k = float(np.clip(1 - abs(sc.sun_alt - 4) / 14, 0, 1)) * (1 - L.cloud * .8) * L.glow_k
         col = col + L.glow * (rim * rim_k * .9)[..., None]
-        # aerial haze for the back row
         haze = L.horizon * .6 + L.zenith * .2
         col = col * (1 - haze_k) + haze * haze_k * (.6 + .4 * lum)
         rows.append((np.concatenate([np.clip(col, 0, 1), al[..., None]], -1), shift))

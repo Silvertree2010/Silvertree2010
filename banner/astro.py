@@ -1,4 +1,3 @@
-"""Sun and moon position – no dependencies, ~0.5° accuracy (plenty for a banner)."""
 import math
 from datetime import datetime, timezone
 
@@ -8,7 +7,7 @@ RAD, DEG = math.pi / 180, 180 / math.pi
 def _days_j2000(dt: datetime) -> float:
     dt = dt.astimezone(timezone.utc)
     jd = dt.timestamp() / 86400 + 2440587.5
-    return jd - 2451543.5          # days since 1999-12-31 0:00 UT (Schlyter epoch)
+    return jd - 2451543.5
 
 
 def _rev(x):
@@ -29,7 +28,7 @@ def _altaz(ra, dec, d, lat, lon):
     dec, lat = dec * RAD, lat * RAD
     alt = math.asin(math.sin(lat) * math.sin(dec) + math.cos(lat) * math.cos(dec) * math.cos(ha))
     az = math.atan2(math.sin(ha), math.cos(ha) * math.sin(lat) - math.tan(dec) * math.cos(lat))
-    return alt * DEG, _rev(az * DEG + 180)    # azimuth: 0 = north, 90 = east
+    return alt * DEG, _rev(az * DEG + 180)
 
 
 def _sun_ecl(d):
@@ -62,7 +61,6 @@ def sun(dt, lat, lon):
 
 
 def moon(dt, lat, lon):
-    """-> (alt, az, illuminated fraction 0..1, waxing?)"""
     d = _days_j2000(dt)
     N = _rev(125.1228 - 0.0529538083 * d) * RAD
     i = 5.1454 * RAD
@@ -97,7 +95,6 @@ def moon(dt, lat, lon):
              - 0.046 * s(Mm + F - 2 * D) + 0.033 * s(F + 2 * D))
 
     ra, dec = _ecl_to_eq(mlon, mlat, d)
-    # topocentric parallax (the moon is close enough for it to matter, ~1°)
     alt, az = _altaz(ra, dec, d, lat, lon)
     alt -= DEG * math.asin(1 / r) * math.cos(alt * RAD)
 

@@ -1,15 +1,13 @@
-"""Raster layers: sky, sun/moon/stars, clouds, fog, mountain ranges. Returns RGBA arrays 0..1."""
 import math, random
 import numpy as np
 from PIL import Image, ImageDraw
 from scipy.ndimage import gaussian_filter
 
 W, H = 1280, 300
-S = 1.25                        # render resolution (1600x375)
-Y_HORIZON = 205                 # true horizon (camera pitch)
+S = 1.25
+Y_HORIZON = 205
 TAU = 2 * math.pi
 
-# --------------------------------------------------------------------------- Colours
 def rgb(h):
     h = h.lstrip("#")
     return np.array([int(h[i:i + 2], 16) for i in (0, 2, 4)], np.float32) / 255
@@ -21,7 +19,6 @@ def smooth(t):
     t = np.clip(t, 0, 1)
     return t * t * (3 - 2 * t)
 
-#        alt   zenith     horizon    glow col   glow  ambient    amb
 PALETTE = [
     (-90, "#010208", "#03060d", "#0b1428", .00, "#5a6fa0", .035),
     (-18, "#02040b", "#060b18", "#142040", .05, "#5a6fa0", .04),
@@ -38,7 +35,6 @@ PALETTE = [
 
 
 class Light:
-    """Lighting derived from sun altitude + weather."""
 
     def __init__(self, sc):
         a = max(-90, min(60, sc.sun_alt))
@@ -59,7 +55,6 @@ class Light:
         gloom = min(gloom, .92)
         self.cloud, self.gloom = cloud, gloom
 
-        # Overcast: desaturated, flatter, darker
         def grey(c, k=1.0):
             l = float(c @ np.array([.3, .59, .11], np.float32))
             return np.array([l, l, l * 1.03], np.float32) * k
@@ -68,7 +63,6 @@ class Light:
         self.glow_k *= (1 - cloud * .8)
         self.amb = lerp(self.amb, grey(self.amb), gloom * .8) * (1 - gloom * .45)
 
-        # Moonlight at night
         if sc.moon_alt > 0 and sc.sun_alt < -4:
             mk = sc.moon_frac * min(1, sc.moon_alt / 20) * (1 - cloud * .8) * .16
             self.amb = self.amb + rgb("#8ea6d8") * mk
@@ -77,14 +71,12 @@ class Light:
 
 
 def to_screen(alt, az):
-    """Sky direction → banner coordinates, using the terrain camera."""
     import terrain
     cam = terrain.camera(int(W * S), int(H * S), Y_HORIZON * S)
     x, y = terrain.project(cam, alt, az)
     return x / S, y / S
 
 
-# --------------------------------------------------------------------------- Noise
 def vnoise2(h, w, fh, fw, rng):
     g = rng.random((fh + 1, fw + 1)).astype(np.float32)
     return np.asarray(Image.fromarray(g, mode="F").resize((w, h), Image.BICUBIC))
@@ -115,7 +107,6 @@ def ridge_line(n, rng, rough):
     return y / tot
 
 def shift_down(a, n):
-    """Shift rows down by n, repeating the top row (no wrap-around like np.roll)."""
     return np.concatenate([np.repeat(a[:1], n, 0), a[:-n]], 0)
 
 
@@ -125,7 +116,6 @@ def blur(a, r):
     return gaussian_filter(a.astype(np.float32), r)
 
 
-# --------------------------------------------------------------------------- Sky
 def sky_layer(sc, L):
     w, h = int(W * S), int(H * S)
     rng = np.random.default_rng(sc.seed)
@@ -135,25 +125,22 @@ def sky_layer(sc, L):
 
     sx, sy = to_screen(sc.sun_alt, sc.sun_az)
     dx, dy = X - sx, Y - sy
-    # wide horizon glow towards the sun + halo around it
     g = (np.exp(-(dx / 620) ** 2) * np.exp(-((Y - Y_HORIZON) / 90) ** 2) * .9
          + np.exp(-(dx / 380) ** 2 - (dy / 140) ** 2) * .7
          + np.exp(-np.hypot(dx, dy * 1.4) / 45) * .8 * (1 - min(.65, max(0, sc.sun_alt) / 40)))
     sky = sky + L.glow * (g * L.glow_k)[..., None] * (1 - sky)
 
-    # light pollution from the valley (night, from below)
     if L.night > 0:
         lp = np.exp(-((Y - Y_HORIZON) / 60) ** 2) * np.exp(-((X - 380) / 520) ** 2)
         sky = sky + rgb("#c08050") * (lp * .05 * L.night * (1 + L.cloud * 2))[..., None]
 
-    # Stars + Milky Way
     vis = L.night * (1 - L.cloud) ** 1.5 * (1 - (.6 if sc.weather.fog else 0))
     if sc.moon_alt > 0:
         vis_mw = vis * (1 - sc.moon_frac * .8)
     else:
         vis_mw = vis
     if vis > .02:
-        srng = np.random.default_rng(1234)          # star field stays fixed
+        srng = np.random.default_rng(1234)
         n = 420
         px = srng.random(n) * w
         py = (srng.random(n) ** 1.25) * Y_HORIZON * S
@@ -162,14 +149,12 @@ def sky_layer(sc, L):
         for x0, y0, m in zip(px, py, mag):
             star[int(y0), int(x0)] += .25 + 1.6 * m
         star = blur(star, .55) * 2.2
-        fade = np.clip((Y_HORIZON - Y) / 60, 0, 1)   # extinction near the horizon
+        fade = np.clip((Y_HORIZON - Y) / 60, 0, 1)
         sky = sky + (star * fade * vis)[..., None] * rgb("#e8eeff")
-        # Milky Way as a diagonal band
         u = (X * .35 + Y * .9 - 420) / 120
         band = np.exp(-u ** 2) * (fbm2(h, w, 6, 20, srng, 5) ** 2)
         sky = sky + (band * .09 * vis_mw * fade)[..., None] * rgb("#b9c3e6")
 
-    # Moon
     if sc.moon_alt > -3:
         mx, my = to_screen(sc.moon_alt, sc.moon_az)
         r = 8.5
@@ -186,7 +171,6 @@ def sky_layer(sc, L):
         halo = np.exp(-np.hypot(X - mx, Y - my) / 38) * sc.moon_frac * .22 * (1 - day) * (1 - L.cloud * .5)
         sky = sky + rgb("#c9d4ee") * halo[..., None]
 
-    # Sun disc
     if sc.sun_alt > -1.5:
         r = 10
         d = np.hypot(dx, dy)
@@ -197,12 +181,11 @@ def sky_layer(sc, L):
         sky = lerp(sky, col[None, None] * np.ones_like(sky), (disc * k)[..., None])
         sky = sky + col * (np.exp(-d / 26) * .6 * k)[..., None]
 
-    sky = sky + (rng.random((h, w, 1), dtype=np.float32) - .5) * (3 / 255)   # dither against banding
+    sky = sky + (rng.random((h, w, 1), dtype=np.float32) - .5) * (3 / 255)
     return np.concatenate([sky.clip(0, 1), np.ones((h, w, 1), np.float32)], 2)
 
 
 def rays_layer(sc, L):
-    """God rays – only with a low sun and gaps to shine through."""
     if not (-4 < sc.sun_alt < 22) or L.cloud > .9 or sc.weather.fog:
         return None
     M = 90
@@ -221,7 +204,6 @@ def rays_layer(sc, L):
     return np.concatenate([col, a[..., None]], 2), M
 
 
-# --------------------------------------------------------------------------- Clouds
 def cloud_layer(sc, L):
     c = L.cloud
     if c < .04 and not sc.weather.fog:
@@ -231,34 +213,30 @@ def cloud_layer(sc, L):
     Y = (np.arange(h, dtype=np.float32) / S)[:, None]
     kind, inten = sc.weather.precip
 
-    # main deck: more cover means wider and denser
     n = tileable_x(h, w, 3, 5, rng, 6)
     top, bot = 20 - 60 * c, 150 + 70 * c
     band = smooth((Y - top) / 40) * smooth((bot - Y) / 50)
     thr = .62 - .42 * c
     dens = np.clip((n - thr) / (.22 + .1 * c), 0, 1) ** 1.2 * band
-    if c > .7:                                         # closed overcast
+    if c > .7:
         sheet = smooth((c - .7) / .25) * smooth((bot + 10 - Y) / 60)
         dens = np.maximum(dens, sheet * (.75 + .25 * n))
-    # cirrus: thin, stretched veils
     ci = tileable_x(h, w, 4, 3, rng, 5)
     ci = np.clip((ci - .55) * 2.5, 0, 1) * smooth((95 - Y) / 60) * .45 * min(1, c * 3)
     dens = np.maximum(dens, ci)
 
-    # lighting: darker undersides, brighter tops
     up = np.clip(dens - shift_down(dens, int(4 * S)), -1, 1)
     shade = .65 + .55 * up - .25 * smooth((Y - 60) / 120) * dens
     dark_k = 1 - inten * .45 - (.25 if sc.weather.thunder else 0)
     base = (L.amb * .9 + L.horizon * .35) * dark_k
     lit = base[None, None] * shade[..., None] + L.glow * (L.glow_k * .35)
-    if L.night > 0:   # undersides lit by town lights
+    if L.night > 0:
         lit = lit + rgb("#a06a48") * (.06 * L.night * smooth((Y - 80) / 120))[..., None]
     alpha = (dens * (.88 + .1 * c)).clip(0, 1)
     return np.concatenate([lit.clip(0, 1), alpha[..., None]], 2)
 
 
 def low_cloud_layer(sc, L):
-    """Low cloud wisps in front of the peaks – rain, snow, storms, heavy cover."""
     k = float(np.clip((L.gloom - .3) / .5, 0, 1))
     if k == 0:
         return None
@@ -290,8 +268,7 @@ def fog_layer(sc, L):
     return np.concatenate([np.broadcast_to(col, (h, w, 3)), a[..., None]], 2)
 
 
-# --------------------------------------------------------------------------- Mountains
-LAYERS = [  # base, amplitude, peak height (for snow), aerial perspective, rock, parallax
+LAYERS = [
     (208, 72, 1.00, .60, "#7c7f86", 6),
     (230, 62, .80, .42, "#565c5c", 14),
     (254, 48, .55, .25, "#3a4a3e", 26),
@@ -319,7 +296,7 @@ def conifer(x, yb, h, rnd):
 
 
 def mountain_layers(sc, L, only=None):
-    rng = np.random.default_rng(5)          # same mountains every time
+    rng = np.random.default_rng(5)
     rnd = random.Random(5)
     h = int(H * S)
     sx, sy = to_screen(sc.sun_alt, sc.sun_az)
@@ -339,7 +316,6 @@ def mountain_layers(sc, L, only=None):
         tex_n = fbm2(h, lw, max(2, int(h / 45)), int(lw / 45), rng, 5) - .5
         snow_n = fbm2(h, lw, max(2, int(h / 25)), int(lw / 25), rng, 4) - .5
 
-        # mask + paint (forest, trees) at double resolution
         up = 2
         paint = Image.new("RGB", (lw * up, h * up), tuple(int(v * 255) for v in rgb(rock)))
         mask = Image.new("L", (lw * up, h * up), 0)
@@ -358,10 +334,10 @@ def mountain_layers(sc, L, only=None):
                     pts = [(px * up, py * up) for px, py in conifer(x, yb, hh, rnd)]
                     col = rgb(rnd.choice(trees))
                     if sc.season == "autumn" and sc.now.month == 9 and col[0] > .5:
-                        col = rgb(trees[0])     # larches only turn gold from October
+                        col = rgb(trees[0])
                     dm.polygon(pts, fill=255)
                     dp.polygon(pts, fill=tuple(int(v * 255) for v in col))
-                    if i == 3 and sc.snowline < .3 and rnd.random() < .6:   # snow on the branches
+                    if i == 3 and sc.snowline < .3 and rnd.random() < .6:
                         cap = [(px * up, py * up) for px, py in conifer(x, yb - hh * .5, hh * .48, random.Random(int(x)))]
                         dp.polygon(cap, fill=(118, 126, 138))
                 x += rnd.uniform(2.2, 5.5) * S
@@ -370,16 +346,14 @@ def mountain_layers(sc, L, only=None):
 
         yy = np.arange(h, dtype=np.float32)[:, None]
         below = np.clip((yy - rl[None, :]) / S, 0, None)
-        hgt = np.clip((base * S - yy) / (amp * S * 1.1), 0, 1)       # 0 foot … 1 summit
+        hgt = np.clip((base * S - yy) / (amp * S * 1.1), 0, 1)
         xs = np.arange(lw, dtype=np.float32) / S - x_off
 
-        # rock: darker towards the foot, texture
         if i < 2:
             forest = rgb("#2d3b31") if sc.season != "winter" else rgb("#3a4440")
             col = lerp(col, forest[None, None], smooth((.45 - hgt) / .35)[..., None] * .7)
         col = col * (1 + tex_n[..., None] * (.4 + .2 * i))
 
-                # slope lighting: blurred silhouette as mountain body + gullies
         rel = 1 - np.abs(2 * fbm2(h, lw, max(2, int(h / 14)), int(lw / 22), rng, 4) - 1)
         body_h = blur(m, 16 * S) + .05 * rel * m
         gx = np.gradient(body_h, axis=1) * S
@@ -388,23 +362,20 @@ def mountain_layers(sc, L, only=None):
         dir_k = direct * float(np.clip(1.25 - sc.sun_alt / 45, .35, 1))
         shade = (1 - dir_k * .5) + dir_k * 1.05 * lit
 
-        # Snow
         snow = smooth((hgt * peak + snow_n * .22 - sc.snowline) / .05) * (1 - below / 400).clip(0, 1)
-        snow *= np.clip(1 - np.abs(gx) * 22, .4, 1)        # steep faces hold little snow
+        snow *= np.clip(1 - np.abs(gx) * 22, .4, 1)
         snow_col = lerp(np.ones(3, np.float32) * .93, L.glow, alpen * .55)
         col = lerp(col, snow_col[None, None], snow[..., None] * (.9, .85, .55, .4)[i])
 
         light = L.amb[None, None] * shade[..., None]
-        light = light + L.glow * (alpen * .6 * hgt * (1 - i * .2))[..., None]   # alpenglow
+        light = light + L.glow * (alpen * .6 * hgt * (1 - i * .2))[..., None]
         img = col * light
 
-        # backlit rim when the sun sits behind the ridge
         edge = np.clip(m - shift_down(m, max(1, int(1.4 * S))), 0, 1)
         edge = blur(edge, .6)
         back = np.exp(-((xs - sx) / 240) ** 2) * float(np.clip(1 - abs(sc.sun_alt - 2) / 10, 0, 1)) * L.glow_k
         img = img + L.glow * (edge * back[None, :] * (.9 - .2 * i))[..., None]
 
-        # aerial perspective + valley mist
         haze = lerp(L.horizon, L.haze, .5) * (1 - L.gloom * .3)
         aer_k = np.clip(aer * (1 + murk), 0, .96)
         valley = smooth(below / 70) ** 1.4 * (.5 - .1 * i) * (1 + murk * .5)

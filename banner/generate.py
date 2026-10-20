@@ -1,9 +1,3 @@
-"""Profile banner: an alpine panorama that follows the real time of day, sun and moon position,
-local weather and season.
-
-    python banner/generate.py --out dist                 # live
-    python banner/generate.py --out dist --at 2026-10-20T18:30 --code 3 --cloud .4
-"""
 import argparse, base64, io, math, random
 from datetime import datetime
 from pathlib import Path
@@ -14,11 +8,11 @@ from PIL import Image
 import fx
 import render as R
 import terrain as T
-import foreground as FG
+import forest as FG
 from state import TZ, Weather, build_scene, fetch_weather
 
 W, H, S = R.W, R.H, R.S
-CAM = 40.0                       # camera move duration
+CAM = 40.0
 
 
 def webp(arr, q=80):
@@ -38,7 +32,6 @@ def image(uri, x, y, w, h, extra=""):
 
 
 def drifting(defs, body, key, arr, q, speed, sign):
-    """Double-width image (tile x2) → seamless loop without an edge between two copies."""
     wide = np.concatenate([arr, arr], 1)
     x0 = 0 if sign < 0 else -W
     body.append(f'<g><image x="{x0}" y="-2" width="{2 * W}" height="{H + 4}" preserveAspectRatio="none" href="{webp(wide, q)}"/>'
@@ -54,7 +47,6 @@ def build(sc):
     drift = fx.wind_vec(w_)
     defs, body = [], []
 
-    # Sky
     body.append(image(webp(R.sky_layer(sc, L), 82), 0, 0, W, H))
     if L.night > .4 and L.cloud < .5 and not w_.fog:
         body.append(fx.meteors(rnd))
@@ -67,14 +59,12 @@ def build(sc):
                     f'<animateTransform attributeName="transform" type="rotate" values="-1.2 {sx:.0f} {sy:.0f};1.2 {sx:.0f} {sy:.0f};-1.2 {sx:.0f} {sy:.0f}" '
                     f'dur="{CAM}s" {fx.EASE} repeatCount="indefinite"/></g>')
 
-    # Clouds drift endlessly with the wind
     cl = R.cloud_layer(sc, L)
     if cl is not None:
-        speed = .25 + abs(drift) * 4                 # px/s
+        speed = .25 + abs(drift) * 4
         sign = -1 if drift < 0 else 1
         drifting(defs, body, 'cl', cl, 78, speed, sign)
 
-    # Real terrain (far → near) + a procedural tree line in front, with parallax
     margin = 40
     cam = T.camera(int((W + 2 * margin) * S), int(H * S), R.Y_HORIZON * S, view_w=W * S)
     terr = T.render_terrain(sc, L, cam)
@@ -84,7 +74,7 @@ def build(sc):
         top = np.argmax(arr[..., 3] > .5, axis=0).astype(np.float32)
         top[arr[..., 3].max(0) < .5] = H * S
         ridges.append((top / S, margin))
-    rows, ground = FG.foreground(sc, L, W, H, S, margin)
+    rows, ground = FG.forest(sc, L, W, H, S, margin)
     for arr, shift in rows:
         layers.append((arr, -margin, W + 2 * margin, shift))
     ridges.append((ground, margin))
@@ -138,7 +128,6 @@ def build(sc):
                     f'dur="{CAM}s" {fx.EASE} repeatCount="indefinite"/></g>')
     body += fore
 
-    # Precipitation + thunderstorms
     if kind == "rain":
         body.append(fx.rain(rnd, inten, drift, hexc(L.horizon * .6 + .35)))
     elif kind == "snow":
@@ -146,7 +135,6 @@ def build(sc):
     if w_.thunder:
         body.append(fx.lightning(rnd, lambda x: ridge_y(x, 0)))
 
-    # Camera: grain + vignette
     grain = .04 + .05 * L.night
     defs.append('<filter id="gr" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".85" '
                 'numOctaves="2" seed="4" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.5 -.5"/></filter>')
@@ -154,8 +142,6 @@ def build(sc):
     defs.append('<radialGradient id="vg" cx="50%" cy="42%" r="72%"><stop offset=".5" stop-color="#000" stop-opacity="0"/>'
                 f'<stop offset="1" stop-color="#000" stop-opacity="{.35 + .35 * L.night:.2f}"/></radialGradient>')
     body.append(f'<rect width="{W}" height="{H}" fill="url(#vg)"/>')
-    # mask instead of clip-path: the group is composited first, then masked once,
-    # so light layers underneath can't bleed through the anti-aliased corners
     defs.append(f'<mask id="k" maskUnits="userSpaceOnUse" x="0" y="0" width="{W}" height="{H}">'
                 f'<rect width="{W}" height="{H}" rx="14" fill="#fff"/></mask>')
 
