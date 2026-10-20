@@ -140,12 +140,15 @@ def build(sc):
     defs.append('<radialGradient id="vg" cx="50%" cy="42%" r="72%"><stop offset=".5" stop-color="#000" stop-opacity="0"/>'
                 f'<stop offset="1" stop-color="#000" stop-opacity="{.35 + .35 * L.night:.2f}"/></radialGradient>')
     body.append(f'<rect width="{W}" height="{H}" fill="url(#vg)"/>')
-    defs.append(f'<clipPath id="k"><rect width="{W}" height="{H}" rx="14"/></clipPath>')
+    # mask instead of clip-path: the group is composited first, then masked once,
+    # so light layers underneath can't bleed through the anti-aliased corners
+    defs.append(f'<mask id="k" maskUnits="userSpaceOnUse" x="0" y="0" width="{W}" height="{H}">'
+                f'<rect width="{W}" height="{H}" rx="14" fill="#fff"/></mask>')
 
     title = f"{sc.now:%Y-%m-%d %H:%M} · {w_.label} · {sc.season}"
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
            f'viewBox="0 0 {W} {H}" width="{W}" height="{H}"><title>{title}</title>'
-           f'<defs>{"".join(defs)}</defs><g clip-path="url(#k)">' + "\n".join(body) + "</g></svg>")
+           f'<defs>{"".join(defs)}</defs><g mask="url(#k)">' + "\n".join(body) + "</g></svg>")
     return svg, title
 
 
