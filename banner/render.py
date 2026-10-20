@@ -6,7 +6,7 @@ from scipy.ndimage import gaussian_filter
 
 W, H = 1280, 300
 S = 1.25                        # render resolution (1600x375)
-Y_HORIZON = 232                 # true horizon behind the mountains
+Y_HORIZON = 205                 # true horizon (camera pitch)
 TAU = 2 * math.pi
 
 # --------------------------------------------------------------------------- Colours
@@ -77,10 +77,11 @@ class Light:
 
 
 def to_screen(alt, az):
-    """Camera faces south: east is left, west is right."""
-    x = (az - 90) / 180 * W
-    y = Y_HORIZON - alt * 4.2
-    return x, y
+    """Sky direction → banner coordinates, using the terrain camera."""
+    import terrain
+    cam = terrain.camera(int(W * S), int(H * S), Y_HORIZON * S)
+    x, y = terrain.project(cam, alt, az)
+    return x / S, y / S
 
 
 # --------------------------------------------------------------------------- Noise
@@ -129,7 +130,7 @@ def sky_layer(sc, L):
     w, h = int(W * S), int(H * S)
     rng = np.random.default_rng(sc.seed)
     X, Y = np.meshgrid(np.arange(w, dtype=np.float32) / S, np.arange(h, dtype=np.float32) / S)
-    t = np.clip(Y / Y_HORIZON, 0, 1) ** 1.35
+    t = np.clip(Y / Y_HORIZON, 0, 1) ** .85
     sky = lerp(L.zenith[None, None], L.horizon[None, None], t[..., None])
 
     sx, sy = to_screen(sc.sun_alt, sc.sun_az)
@@ -294,7 +295,7 @@ LAYERS = [  # base, amplitude, peak height (for snow), aerial perspective, rock,
     (208, 72, 1.00, .60, "#7c7f86", 6),
     (230, 62, .80, .42, "#565c5c", 14),
     (254, 48, .55, .25, "#3a4a3e", 26),
-    (280, 34, .32, .08, "#26352a", 44),
+    (294, 24, .32, .08, "#26352a", 34),
 ]
 
 TREE_COL = {
@@ -317,7 +318,7 @@ def conifer(x, yb, h, rnd):
     return pts + right + [(x + w * .06, yb + 2), (x - w * .06, yb + 2)] + left[::-1]
 
 
-def mountain_layers(sc, L):
+def mountain_layers(sc, L, only=None):
     rng = np.random.default_rng(5)          # same mountains every time
     rnd = random.Random(5)
     h = int(H * S)
@@ -329,6 +330,8 @@ def mountain_layers(sc, L):
     murk = (1.1 if sc.weather.fog else 0) + inten * .7
     out, ridges = [], []
     for i, (base, amp, peak, aer, rock, shift) in enumerate(LAYERS):
+        if only is not None and i not in only:
+            continue
         lw = int((W + 2 * shift + 20) * S)
         x_off = shift + 10
         rl = ridge_line(lw, rng, .75 + .15 * i)

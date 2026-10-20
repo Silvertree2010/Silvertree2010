@@ -13,6 +13,7 @@ from PIL import Image
 
 import fx
 import render as R
+import terrain as T
 from state import TZ, Weather, build_scene, fetch_weather
 
 W, H, S = R.W, R.H, R.S
@@ -72,8 +73,20 @@ def build(sc):
         sign = -1 if drift < 0 else 1
         drifting(defs, body, 'cl', cl, 78, speed, sign)
 
-    # Mountains, with wildlife and fog in between
-    layers, ridges = R.mountain_layers(sc, L)
+    # Real terrain (far → near) + a procedural tree line in front, with parallax
+    margin = 40
+    cam = T.camera(int((W + 2 * margin) * S), int(H * S), R.Y_HORIZON * S, view_w=W * S)
+    terr = T.render_terrain(sc, L, cam)
+    layers, ridges = [], []
+    for arr, shift in zip(terr, (3, 8, 16)):
+        layers.append((arr, -margin, W + 2 * margin, shift))
+        top = np.argmax(arr[..., 3] > .5, axis=0).astype(np.float32)
+        top[arr[..., 3].max(0) < .5] = H * S
+        ridges.append((top / S, margin))
+    fl, fr = R.mountain_layers(sc, L, only=(3,))
+    for (arr, lw, shift), rd in zip(fl, fr):
+        layers.append((arr, -(shift + 10), lw / S, shift))
+        ridges.append(rd)
 
     def ridge_y(x, layer=3):
         arr, off = ridges[layer]
@@ -111,7 +124,7 @@ def build(sc):
 
     fog = R.fog_layer(sc, L)
     low = R.low_cloud_layer(sc, L)
-    for i, (arr, lw, shift) in enumerate(layers):
+    for i, (arr, x0, width, shift) in enumerate(layers):
         body += fauna[i]
         if i == 2 and low is not None:
             sign = -1 if drift < 0 else 1
@@ -119,7 +132,7 @@ def build(sc):
         if i == 3 and fog is not None:
             sign = -1 if drift < 0 else 1
             drifting(defs, body, 'fg', fog, 72, .6 + abs(drift) * 3, sign)
-        body.append(f'<g>{image(webp(arr, 82), -(shift + 10), 0, lw / S, H)}'
+        body.append(f'<g>{image(webp(arr, 84), x0, 0, width, H)}'
                     f'<animateTransform attributeName="transform" type="translate" values="0 0;-{shift} 0;0 0" '
                     f'dur="{CAM}s" {fx.EASE} repeatCount="indefinite"/></g>')
     body += fore
