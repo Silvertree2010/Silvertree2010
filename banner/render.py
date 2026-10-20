@@ -20,9 +20,9 @@ def smooth(t):
     return t * t * (3 - 2 * t)
 
 PALETTE = [
-    (-90, "#010208", "#03060d", "#0b1428", .00, "#5a6fa0", .035),
-    (-18, "#02040b", "#060b18", "#142040", .05, "#5a6fa0", .04),
-    (-12, "#040915", "#0d1830", "#233560", .15, "#6f84b8", .07),
+    (-90, "#060a18", "#111a32", "#1a2440", .00, "#6a7eb0", .11),
+    (-18, "#070c1c", "#131d38", "#1e2a4a", .05, "#6a7eb0", .11),
+    (-12, "#081024", "#16244a", "#2a3a68", .15, "#7388c0", .12),
     (-8,  "#071025", "#1c2a4e", "#6a4a6a", .25, "#7f8fc0", .11),
     (-4,  "#0d1a38", "#4a4a72", "#d0705a", .45, "#a08cb0", .18),
     (-1,  "#16295a", "#b06a5a", "#ff8c50", .75, "#e0a080", .28),
@@ -67,6 +67,11 @@ class Light:
             mk = sc.moon_frac * min(1, sc.moon_alt / 20) * (1 - cloud * .8) * .16
             self.amb = self.amb + rgb("#8ea6d8") * mk
         self.night = float(np.clip((-sc.sun_alt - 4) / 10, 0, 1))
+        if self.night > 0:
+            sky_glow = rgb("#3a3440") * cloud * self.night
+            self.zenith = self.zenith + sky_glow * .5
+            self.horizon = self.horizon + sky_glow
+            self.amb = self.amb + rgb("#4a4a58") * cloud * self.night * .35
         self.haze = lerp(self.horizon, self.zenith, .25)
 
 

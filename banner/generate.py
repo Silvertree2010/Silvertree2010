@@ -133,7 +133,7 @@ def build(sc):
     if w_.thunder:
         body.append(fx.lightning(rnd, lambda x: ridge_y(x, 0)))
 
-    grain = .04 + .05 * L.night
+    grain = .04 + .015 * L.night
     defs.append('<filter id="gr" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".85" '
                 'numOctaves="2" seed="4" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.5 -.5"/></filter>')
     body.append(f'<rect width="{W}" height="{H}" filter="url(#gr)" opacity="{grain:.3f}"/>')
