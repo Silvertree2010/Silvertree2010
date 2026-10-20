@@ -113,6 +113,11 @@ def ridge_line(n, rng, rough):
         y += a * r ** 1.6; tot += a; a *= .5 if o < 2 else .5 * rough
     return y / tot
 
+def shift_down(a, n):
+    """Shift rows down by n, repeating the top row (no wrap-around like np.roll)."""
+    return np.concatenate([np.repeat(a[:1], n, 0), a[:-n]], 0)
+
+
 def blur(a, r):
     if r <= 0:
         return a
@@ -240,7 +245,7 @@ def cloud_layer(sc, L):
     dens = np.maximum(dens, ci)
 
     # lighting: darker undersides, brighter tops
-    up = np.clip(dens - np.roll(dens, int(4 * S), 0), -1, 1)
+    up = np.clip(dens - shift_down(dens, int(4 * S)), -1, 1)
     shade = .65 + .55 * up - .25 * smooth((Y - 60) / 120) * dens
     dark_k = 1 - inten * .45 - (.25 if sc.weather.thunder else 0)
     base = (L.amb * .9 + L.horizon * .35) * dark_k
@@ -262,7 +267,7 @@ def low_cloud_layer(sc, L):
     n = tileable_x(h, w, 3, 7, rng, 6)
     band = smooth((Y - 95) / 45) * smooth((228 - Y) / 30)
     dens = np.clip((n - (.62 - .25 * k)) / .25, 0, 1) * band * (.6 + .4 * k)
-    up = np.clip(dens - np.roll(dens, int(4 * S), 0), -1, 1)
+    up = np.clip(dens - shift_down(dens, int(4 * S)), -1, 1)
     base = (L.amb * .85 + L.horizon * .3) * (1 - sc.weather.precip[1] * .35)
     col = base[None, None] * (.75 + .45 * up)[..., None]
     return np.concatenate([col.clip(0, 1), dens[..., None]], 2)
@@ -391,7 +396,7 @@ def mountain_layers(sc, L):
         img = col * light
 
         # backlit rim when the sun sits behind the ridge
-        edge = np.clip(m - np.roll(m, max(1, int(1.4 * S)), 0), 0, 1)
+        edge = np.clip(m - shift_down(m, max(1, int(1.4 * S))), 0, 1)
         edge = blur(edge, .6)
         back = np.exp(-((xs - sx) / 240) ** 2) * float(np.clip(1 - abs(sc.sun_alt - 2) / 10, 0, 1)) * L.glow_k
         img = img + L.glow * (edge * back[None, :] * (.9 - .2 * i))[..., None]
