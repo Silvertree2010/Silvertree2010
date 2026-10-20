@@ -83,10 +83,8 @@ def build(sc):
         top = np.argmax(arr[..., 3] > .5, axis=0).astype(np.float32)
         top[arr[..., 3].max(0) < .5] = H * S
         ridges.append((top / S, margin))
-    fl, fr = R.mountain_layers(sc, L, only=(3,))
-    for (arr, lw, shift), rd in zip(fl, fr):
-        layers.append((arr, -(shift + 10), lw / S, shift))
-        ridges.append(rd)
+    # no artificial foreground: near-camera wildlife (bats, fireflies) hovers along the bottom edge
+    ridges.append((np.full(int((W + 2 * margin) * S), H + 6, np.float32), margin))
 
     def ridge_y(x, layer=3):
         arr, off = ridges[layer]
@@ -129,12 +127,13 @@ def build(sc):
         if i == 2 and low is not None:
             sign = -1 if drift < 0 else 1
             drifting(defs, body, 'lc', low, 74, .5 + abs(drift) * 5, sign)
-        if i == 3 and fog is not None:
-            sign = -1 if drift < 0 else 1
-            drifting(defs, body, 'fg', fog, 72, .6 + abs(drift) * 3, sign)
         body.append(f'<g>{image(webp(arr, 84), x0, 0, width, H)}'
                     f'<animateTransform attributeName="transform" type="translate" values="0 0;-{shift} 0;0 0" '
                     f'dur="{CAM}s" {fx.EASE} repeatCount="indefinite"/></g>')
+    if fog is not None:
+        sign = -1 if drift < 0 else 1
+        drifting(defs, body, 'fg', fog, 72, .6 + abs(drift) * 3, sign)
+    body += fauna[3]
     body += fore
 
     # Precipitation + thunderstorms
