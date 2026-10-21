@@ -164,6 +164,10 @@ def main():
     a = ap.parse_args()
 
     now = datetime.fromisoformat(a.at).replace(tzinfo=TZ) if a.at else datetime.now(TZ)
+    fixed = Path(__file__).resolve().parent / "fixed_time.txt"
+    if not a.at and fixed.exists():
+        hh, mm = map(int, fixed.read_text().strip().split(":"))
+        now = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
     w = Weather() if (a.offline or a.code is not None) else fetch_weather()
     for k, v in (("code", a.code), ("cloud", a.cloud), ("temp", a.temp), ("wind", a.wind), ("wind_dir", a.wdir)):
         if v is not None:
