@@ -2,7 +2,7 @@ name: Live banner
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "7 */2 * * *"
   workflow_dispatch:
   push:
     branches: [main]
@@ -18,7 +18,7 @@ concurrency:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 355
     env:
       BANNER_ASSETS: ${{ github.workspace }}/.assets
     steps:
@@ -41,18 +41,26 @@ jobs:
         run: |
           if [ ! -d .assets/fir_tree_01 ]; then python banner/tools/fetch_assets.py .assets; fi
 
-      - name: Render banner
+      - name: Render and publish every 30 minutes
         env:
           BANNER_LAT: ${{ secrets.BANNER_LAT }}
           BANNER_LON: ${{ secrets.BANNER_LON }}
-        run: python banner/generate.py --out dist
-
-      - name: Publish to output branch
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd dist
-          git init -q -b output
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add banner.svg
-          git commit -q -m "banner $(date -u +%FT%TZ)"
-          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" output
+          publish() {
+            rm -rf pub && mkdir pub && cp dist/banner.svg pub/
+            cd pub
+            git init -q -b output
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add banner.svg
+            git commit -q -m "banner $(date -u +%FT%TZ)"
+            git push -qf "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" output
+            cd ..
+          }
+          end=$(( $(date +%s) + 340 * 60 ))
+          while [ $(date +%s) -lt $end ]; do
+            python banner/generate.py --out dist && publish || echo "render failed"
+            now=$(date +%s)
+            sleep $(( 1800 - now % 1800 + 30 ))
+          done
